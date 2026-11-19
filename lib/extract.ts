@@ -8,15 +8,12 @@ export type ExtractedSong = {
   chorus: string;
 };
 
-// Free OpenRouter models to try, in order. Free slugs come and go, so we keep
-// several and fall back to the next one when a model is unavailable/rate-limited.
-// Override with OPENROUTER_MODEL (a single slug, or a comma-separated list).
-const DEFAULT_FREE_MODELS = [
+// Last-resort fallback list if runtime discovery fails. Free slugs change
+// often, so the app prefers discovering the current free models at runtime.
+const FALLBACK_FREE_MODELS = [
   "google/gemini-2.0-flash-exp:free",
   "deepseek/deepseek-chat-v3-0324:free",
   "meta-llama/llama-3.3-70b-instruct:free",
-  "mistralai/mistral-small-3.2-24b-instruct:free",
-  "qwen/qwen-2.5-72b-instruct:free",
 ];
 
 type LLMConfig = {
@@ -24,6 +21,7 @@ type LLMConfig = {
   baseURL?: string;
   models: string[];
   isOpenRouter: boolean;
+  hasOverride: boolean;
 };
 
 function getLLMConfig(): LLMConfig | null {
@@ -32,12 +30,13 @@ function getLLMConfig(): LLMConfig | null {
     const override = process.env.OPENROUTER_MODEL;
     const models = override
       ? override.split(",").map((s) => s.trim()).filter(Boolean)
-      : DEFAULT_FREE_MODELS;
+      : FALLBACK_FREE_MODELS;
     return {
       apiKey: orKey,
       baseURL: "https://openrouter.ai/api/v1",
       models,
       isOpenRouter: true,
+      hasOverride: Boolean(override),
     };
   }
   const oaKey = process.env.OPENAI_API_KEY;
@@ -46,9 +45,55 @@ function getLLMConfig(): LLMConfig | null {
       apiKey: oaKey,
       models: [process.env.OPENAI_MODEL || "gpt-4o-mini"],
       isOpenRouter: false,
+      hasOverride: true,
     };
   }
   return null;
+}
+
+// Ask OpenRouter which models are currently free, so we never hard-code slugs
+// that quietly become paid. Returns ranked free text-model ids (best first).
+async function discoverFreeModels(apiKey: string): Promise<string[]> {
+  try {
+    const res = await fetch("https://openrouter.ai/api/v1/models", {
+      headers: { Authorization: `Bearer ${apiKey}` },
+    });
+    if (!res.ok) return [];
+    const data: any = await res.json();
+    const list: any[] = Array.isArray(data?.data) ? data.data : [];
+
+    const free = list.filter((m) => {
+      const p = m?.pricing;
+      const isFree = p && p.prompt === "0" && p.completion === "0";
+      const id: string = typeof m?.id === "string" ? m.id : "";
+      if (!isFree || !id.includes(":free")) return false;
+      const out = m?.architecture?.output_modalities;
+      if (Array.isArray(out) && !out.includes("text")) return false;
+      return true;
+    });
+
+    // Prefer well-known instruct/chat families for reliable JSON output.
+    const fams = [
+      "gemini",
+      "llama",
+      "deepseek",
+      "qwen",
+      "mistral",
+      "gemma",
+      "phi",
+    ];
+    const rank = (id: string) => {
+      const i = fams.findIndex((f) => id.toLowerCase().includes(f));
+      return i === -1 ? 99 : i;
+    };
+
+    return free
+      .map((m) => m.id as string)
+      .sort((a, b) => rank(a) - rank(b))
+      .slice(0, 10);
+  } catch {
+    return [];
+  }
 }
 
 async function fetchPageText(url: string): Promise<string> {
@@ -130,6 +175,16 @@ export async function extractSongFromUrl(url: string): Promise<ExtractedSong> {
     return fallbackExtract(url, pageText);
   }
 
+  // Build the list of models to try. With OpenRouter and no explicit override,
+  // discover the currently-free models first, then fall back to the static list.
+  let models = cfg.models;
+  if (cfg.isOpenRouter && !cfg.hasOverride) {
+    const discovered = await discoverFreeModels(cfg.apiKey);
+    if (discovered.length) {
+      models = Array.from(new Set([...discovered, ...cfg.models]));
+    }
+  }
+
   const client = new OpenAI({
     apiKey: cfg.apiKey,
     baseURL: cfg.baseURL,
@@ -153,7 +208,7 @@ export async function extractSongFromUrl(url: string): Promise<ExtractedSong> {
   // provider error (model unavailable, rate limit, etc.).
   let raw = "";
   let lastErr: unknown = null;
-  for (const model of cfg.models) {
+  for (const model of models) {
     try {
       const completion = await client.chat.completions.create({
         model,
@@ -167,13 +222,11 @@ export async function extractSongFromUrl(url: string): Promise<ExtractedSong> {
       }
     } catch (err) {
       lastErr = err;
-      // try the next model
     }
   }
 
   if (!raw) {
-    const detail =
-      lastErr instanceof Error ? ` (${lastErr.message})` : "";
+    const detail = lastErr instanceof Error ? ` (${lastErr.message})` : "";
     throw new Error(
       `לא הצלחתי לחלץ מילים — אף מודל זמין לא הגיב${detail}. אפשר להגדיר OPENROUTER_MODEL למודל אחר.`
     );
