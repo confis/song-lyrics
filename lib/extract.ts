@@ -8,26 +8,35 @@ export type ExtractedSong = {
   chorus: string;
 };
 
-// Which LLM provider to use, resolved from env.
-// Prefer OpenRouter (free models) when its key is set; fall back to OpenAI.
+// Free OpenRouter models to try, in order. Free slugs come and go, so we keep
+// several and fall back to the next one when a model is unavailable/rate-limited.
+// Override with OPENROUTER_MODEL (a single slug, or a comma-separated list).
+const DEFAULT_FREE_MODELS = [
+  "google/gemini-2.0-flash-exp:free",
+  "deepseek/deepseek-chat-v3-0324:free",
+  "meta-llama/llama-3.3-70b-instruct:free",
+  "mistralai/mistral-small-3.2-24b-instruct:free",
+  "qwen/qwen-2.5-72b-instruct:free",
+];
+
 type LLMConfig = {
   apiKey: string;
   baseURL?: string;
-  model: string;
+  models: string[];
   isOpenRouter: boolean;
 };
 
 function getLLMConfig(): LLMConfig | null {
   const orKey = process.env.OPENROUTER_API_KEY;
   if (orKey) {
+    const override = process.env.OPENROUTER_MODEL;
+    const models = override
+      ? override.split(",").map((s) => s.trim()).filter(Boolean)
+      : DEFAULT_FREE_MODELS;
     return {
       apiKey: orKey,
       baseURL: "https://openrouter.ai/api/v1",
-      // Override with OPENROUTER_MODEL. Default is a capable free model;
-      // free slugs change over time, so make it configurable.
-      model:
-        process.env.OPENROUTER_MODEL ||
-        "meta-llama/llama-3.3-70b-instruct:free",
+      models,
       isOpenRouter: true,
     };
   }
@@ -35,14 +44,13 @@ function getLLMConfig(): LLMConfig | null {
   if (oaKey) {
     return {
       apiKey: oaKey,
-      model: process.env.OPENAI_MODEL || "gpt-4o-mini",
+      models: [process.env.OPENAI_MODEL || "gpt-4o-mini"],
       isOpenRouter: false,
     };
   }
   return null;
 }
 
-// Fetch the page at `url` and return a cleaned-up text version of its body.
 async function fetchPageText(url: string): Promise<string> {
   const res = await fetch(url, {
     headers: {
@@ -69,8 +77,6 @@ async function fetchPageText(url: string): Promise<string> {
   return `PAGE TITLE: ${pageTitle}\n\n${bodyText}`.slice(0, 16000);
 }
 
-// Fallback used when no LLM key is configured: keep the page text so the app
-// is still usable for testing/local dev.
 function fallbackExtract(url: string, pageText: string): ExtractedSong {
   const titleMatch = pageText.match(/PAGE TITLE: (.*)/);
   return {
@@ -92,7 +98,7 @@ function parseJsonLoose(text: string): Partial<ExtractedSong> | null {
   try {
     return JSON.parse(t);
   } catch {
-    /* try to slice out the object */
+    /* fall through */
   }
   const start = t.indexOf("{");
   const end = t.lastIndexOf("}");
@@ -135,19 +141,44 @@ export async function extractSongFromUrl(url: string): Promise<ExtractedSong> {
       : undefined,
   });
 
-  const completion = await client.chat.completions.create({
-    model: cfg.model,
-    temperature: 0,
-    messages: [
-      { role: "system", content: SYSTEM_PROMPT },
-      {
-        role: "user",
-        content: `כתובת העמוד: ${url}\n\nתוכן העמוד:\n${pageText}`,
-      },
-    ],
-  });
+  const messages = [
+    { role: "system" as const, content: SYSTEM_PROMPT },
+    {
+      role: "user" as const,
+      content: `כתובת העמוד: ${url}\n\nתוכן העמוד:\n${pageText}`,
+    },
+  ];
 
-  const raw = completion.choices[0]?.message?.content || "";
+  // Try each model until one returns usable content. Fall to the next on any
+  // provider error (model unavailable, rate limit, etc.).
+  let raw = "";
+  let lastErr: unknown = null;
+  for (const model of cfg.models) {
+    try {
+      const completion = await client.chat.completions.create({
+        model,
+        temperature: 0,
+        messages,
+      });
+      const content = completion.choices[0]?.message?.content || "";
+      if (content.trim()) {
+        raw = content;
+        break;
+      }
+    } catch (err) {
+      lastErr = err;
+      // try the next model
+    }
+  }
+
+  if (!raw) {
+    const detail =
+      lastErr instanceof Error ? ` (${lastErr.message})` : "";
+    throw new Error(
+      `לא הצלחתי לחלץ מילים — אף מודל זמין לא הגיב${detail}. אפשר להגדיר OPENROUTER_MODEL למודל אחר.`
+    );
+  }
+
   const parsed = parseJsonLoose(raw);
   if (!parsed) {
     return fallbackExtract(url, pageText);
