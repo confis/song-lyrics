@@ -18,11 +18,15 @@ npm run dev
 
 | משתנה | חובה | תיאור |
 |-------|------|-------|
-| `OPENAI_API_KEY` | כן (לחילוץ AI) | מפתח OpenAI. בלעדיו האפליקציה שומרת את טקסט העמוד הגולמי. |
+| `OPENROUTER_API_KEY` | כן (מועדף, חינם) | מפתח OpenRouter — https://openrouter.ai/keys. מופעל לפני OpenAI. |
+| `OPENROUTER_MODEL` | לא | דגם חינמי, ברירת מחדל `meta-llama/llama-3.3-70b-instruct:free`. |
+| `OPENAI_API_KEY` | חלופה | מפתח OpenAI (בשימוש רק אם אין `OPENROUTER_API_KEY`). |
 | `OPENAI_MODEL` | לא | דגם ברירת מחדל `gpt-4o-mini`. |
 | `TURSO_DATABASE_URL` / `DATABASE_URL` | לא | כתובת libSQL/Turso (`libsql://...`) לשמירה קבועה. |
 | `TURSO_AUTH_TOKEN` / `DATABASE_AUTH_TOKEN` | לא | הטוקן של Turso. |
 
+חילוץ המילים משתמש ב-API תואם-OpenAI: אם מוגדר `OPENROUTER_API_KEY` הוא עובד מול
+OpenRouter (מודלים חינמיים), אחרת מול OpenAI. ללא אף מפתח — נשמר טקסט העמוד הגולמי.
 ללא משתני מסד נתונים, האחסון הוא קובץ SQLite מקומי (`data/songs.db`).
 ב-Vercel, בלי Turso, האחסון זמני (`/tmp`) ומתאפס — לכן מומלץ Turso בפרודקשן.
 
