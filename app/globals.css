@@ -146,7 +146,13 @@ button:disabled {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
-  overflow: hidden;
+}
+
+/* Keep the lyrics/edit body within the rounded bottom corners without
+   clipping the actions dropdown (which overflows the card). */
+.card-body {
+  border-bottom-left-radius: var(--radius);
+  border-bottom-right-radius: var(--radius);
 }
 
 .card.dragging {
@@ -211,6 +217,7 @@ button:disabled {
   display: flex;
   gap: 6px;
   flex: 0 0 auto;
+  position: relative;
 }
 
 .icon-btn {
@@ -222,6 +229,63 @@ button:disabled {
 }
 
 .icon-btn.danger {
+  color: var(--danger);
+}
+
+/* Three-dots (kebab) actions menu — keeps edit/lyrics/delete out of
+   accidental tap range. */
+.kebab {
+  background: transparent;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  font-size: 24px;
+  line-height: 0.6;
+  padding: 8px 16px;
+  border-radius: 10px;
+}
+
+.kebab:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+.menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  inset-inline-start: 0;
+  min-width: 170px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+}
+
+.menu button {
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  color: var(--text);
+  text-align: start;
+  padding: 15px 18px;
+  font-size: 16px;
+  font-weight: 600;
+  border-bottom: 1px solid var(--border);
+}
+
+.menu button:last-child {
+  border-bottom: none;
+}
+
+.menu button:active,
+.menu button:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.menu button.danger {
   color: var(--danger);
 }
 
@@ -361,25 +425,6 @@ button:disabled {
   }
 }
 
-/* On narrow screens move the action buttons to their own row so the
-   song title always has room and never gets squeezed. */
-@media (max-width: 640px) {
-  .card-head {
-    flex-wrap: wrap;
-    row-gap: 8px;
-  }
-  .titles {
-    flex: 1 1 auto;
-  }
-  .card-actions {
-    flex: 1 1 100%;
-    justify-content: flex-start;
-  }
-  .card-actions .icon-btn {
-    flex: 1 1 0;
-    text-align: center;
-  }
-}
 
 @media (max-width: 500px) {
   .add-box {

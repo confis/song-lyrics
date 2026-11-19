@@ -216,12 +216,21 @@ function SortableCard({
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [editErr, setEditErr] = useState<string | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
   const [fields, setFields] = useState<EditFields>({
     title: song.title,
     artist: song.artist || "",
     chorus: song.chorus || "",
     lyrics: song.lyrics,
   });
+
+  // Close the actions menu when clicking/tapping anywhere else.
+  useEffect(() => {
+    if (!menuOpen) return;
+    const close = () => setMenuOpen(false);
+    document.addEventListener("click", close);
+    return () => document.removeEventListener("click", close);
+  }, [menuOpen]);
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -272,17 +281,47 @@ function SortableCard({
           {song.artist && <div className="a">{song.artist}</div>}
         </div>
         <div className="card-actions">
-          {!editing && (
-            <button className="icon-btn" onClick={startEdit} title="ערוך">
-              ערוך
-            </button>
+          <button
+            className="kebab"
+            aria-label="פעולות"
+            aria-haspopup="true"
+            aria-expanded={menuOpen}
+            onClick={(e) => {
+              e.stopPropagation();
+              setMenuOpen((v) => !v);
+            }}
+          >
+            ⋯
+          </button>
+          {menuOpen && (
+            <div className="menu" onClick={(e) => e.stopPropagation()}>
+              <button
+                onClick={() => {
+                  onToggle();
+                  setMenuOpen(false);
+                }}
+              >
+                {open ? "סגור מילים" : "הצג מילים"}
+              </button>
+              <button
+                onClick={() => {
+                  startEdit();
+                  setMenuOpen(false);
+                }}
+              >
+                ערוך
+              </button>
+              <button
+                className="danger"
+                onClick={() => {
+                  setMenuOpen(false);
+                  onDelete();
+                }}
+              >
+                מחק
+              </button>
+            </div>
           )}
-          <button className="icon-btn" onClick={onToggle}>
-            {open ? "סגור" : "מילים"}
-          </button>
-          <button className="icon-btn danger" onClick={onDelete} title="מחק">
-            מחק
-          </button>
         </div>
       </div>
 
