@@ -96,30 +96,64 @@ async function discoverFreeModels(apiKey: string): Promise<string[]> {
   }
 }
 
-async function fetchPageText(url: string): Promise<string> {
-  const res = await fetch(url, {
-    headers: {
-      "User-Agent":
-        "Mozilla/5.0 (compatible; LyricsCollector/1.0; +https://example.com)",
-      Accept: "text/html,application/xhtml+xml",
-    },
-    redirect: "follow",
-  });
-  if (!res.ok) {
-    throw new Error(`לא הצלחתי להוריד את העמוד (סטטוס ${res.status})`);
-  }
-  const html = await res.text();
+const BROWSER_HEADERS: Record<string, string> = {
+  "User-Agent":
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+    "(KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+  Accept:
+    "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+  "Accept-Language": "he-IL,he;q=0.9,en;q=0.8",
+};
+
+function htmlToText(html: string): string {
   const $ = cheerio.load(html);
   $("script, style, noscript, svg, iframe, header, footer, nav").remove();
-
   const pageTitle = $("title").first().text().trim();
   const bodyText = $("body")
     .text()
     .replace(/[ \t ]+/g, " ")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
-
   return `PAGE TITLE: ${pageTitle}\n\n${bodyText}`.slice(0, 16000);
+}
+
+async function fetchPageText(url: string): Promise<string> {
+  // 1) Direct fetch with browser-like headers.
+  try {
+    const res = await fetch(url, {
+      headers: BROWSER_HEADERS,
+      redirect: "follow",
+    });
+    if (res.ok) {
+      const text = htmlToText(await res.text());
+      if (text.replace(/^PAGE TITLE:.*$/m, "").trim().length > 40) return text;
+    }
+  } catch {
+    /* fall through to the reader */
+  }
+
+  // 2) Fallback: Jina AI Reader fetches and cleans pages that block bots
+  //    (e.g. Genius returns 403 to server/data-center requests).
+  try {
+    const res = await fetch(`https://r.jina.ai/${url}`, {
+      headers: {
+        Accept: "text/plain",
+        "X-Return-Format": "text",
+        "Accept-Language": "he-IL,he;q=0.9,en;q=0.8",
+      },
+      redirect: "follow",
+    });
+    if (res.ok) {
+      const text = (await res.text()).trim();
+      if (text) return `PAGE TEXT:\n\n${text}`.slice(0, 16000);
+    }
+  } catch {
+    /* ignore */
+  }
+
+  throw new Error(
+    "לא הצלחתי להוריד את עמוד המילים. נסו לינק אחר או שיר אחר."
+  );
 }
 
 function fallbackExtract(url: string, pageText: string): ExtractedSong {
