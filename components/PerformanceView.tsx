@@ -44,6 +44,13 @@ type SearchResult = {
   thumbnail: string;
 };
 
+type LibItem = {
+  id: string;
+  title: string;
+  artist: string | null;
+  perf_name: string | null;
+};
+
 export default function PerformanceView({
   performance,
   onBack,
@@ -60,6 +67,11 @@ export default function PerformanceView({
   const [results, setResults] = useState<SearchResult[]>([]);
   const [searching, setSearching] = useState(false);
   const [searchNote, setSearchNote] = useState<string | null>(null);
+  const [libOpen, setLibOpen] = useState(false);
+  const [library, setLibrary] = useState<LibItem[]>([]);
+  const [libLoading, setLibLoading] = useState(false);
+  const [libFilter, setLibFilter] = useState("");
+  const [copyingId, setCopyingId] = useState<string | null>(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
@@ -150,6 +162,44 @@ export default function PerformanceView({
     else if (results.length) addByUrl(results[0].url);
   }
 
+  async function toggleLibrary() {
+    const open = !libOpen;
+    setLibOpen(open);
+    if (open) {
+      setLibLoading(true);
+      setLibFilter("");
+      try {
+        const res = await fetch("/api/library");
+        const data = await res.json();
+        setLibrary(data.songs || []);
+      } catch {
+        setLibrary([]);
+      } finally {
+        setLibLoading(false);
+      }
+    }
+  }
+
+  // Copy an already-fetched song from the library into this performance.
+  async function addExisting(fromId: string) {
+    setCopyingId(fromId);
+    setError(null);
+    try {
+      const res = await fetch("/api/songs/copy", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fromId, performanceId: performance.id }),
+      });
+      const data = await res.json();
+      if (!res.ok) setError(data.error || "שגיאה בהוספת השיר");
+      else setSongs((prev) => [...prev, data.song]);
+    } catch {
+      setError("שגיאת רשת — נסו שוב");
+    } finally {
+      setCopyingId(null);
+    }
+  }
+
   async function removeSong(id: string) {
     setSongs((prev) => prev.filter((s) => s.id !== id));
     await fetch(`/api/songs/${id}`, { method: "DELETE" });
@@ -187,6 +237,27 @@ export default function PerformanceView({
       body: JSON.stringify({ order: next.map((s) => s.id) }),
     });
   }
+
+  const haveKeys = new Set(
+    songs.map(
+      (s) =>
+        `${s.title.trim().toLowerCase()}|${(s.artist || "")
+          .trim()
+          .toLowerCase()}`
+    )
+  );
+  const libQ = libFilter.trim().toLowerCase();
+  const filteredLibrary = library.filter((it) => {
+    const key = `${(it.title || "").trim().toLowerCase()}|${(it.artist || "")
+      .trim()
+      .toLowerCase()}`;
+    if (haveKeys.has(key)) return false; // already in this performance
+    if (!libQ) return true;
+    return (
+      (it.title || "").toLowerCase().includes(libQ) ||
+      (it.artist || "").toLowerCase().includes(libQ)
+    );
+  });
 
   return (
     <>
@@ -251,6 +322,50 @@ export default function PerformanceView({
         {searchNote ||
           "הקלידו שם שיר וקבלו הצעות, או הדביקו לינק ישיר (Shironet/Genius)."}
       </div>
+
+      <button className="lib-toggle" onClick={toggleLibrary}>
+        {libOpen ? "✕ סגור" : "➕ הוסף שיר שכבר יש לי"}
+      </button>
+      {libOpen && (
+        <div className="lib-panel">
+          <input
+            className="lib-filter"
+            type="text"
+            dir="auto"
+            placeholder="סנן לפי שם…"
+            value={libFilter}
+            onChange={(e) => setLibFilter(e.target.value)}
+          />
+          {libLoading ? (
+            <div className="suggest-loading">טוען…</div>
+          ) : filteredLibrary.length === 0 ? (
+            <div className="suggest-loading">אין שירים זמינים להוספה.</div>
+          ) : (
+            <div className="lib-list">
+              {filteredLibrary.map((it) => (
+                <button
+                  key={it.id}
+                  type="button"
+                  className="suggest-item"
+                  disabled={copyingId === it.id}
+                  onClick={() => addExisting(it.id)}
+                >
+                  <span className="suggest-text">
+                    <span className="suggest-title">{it.title}</span>
+                    <span className="suggest-artist">
+                      {it.artist || ""}
+                      {it.perf_name ? ` · מתוך: ${it.perf_name}` : ""}
+                    </span>
+                  </span>
+                  <span className="lib-add">
+                    {copyingId === it.id ? "…" : "הוסף"}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {songs.length === 0 ? (
         <div className="empty">עדיין אין שירים בהופעה הזו. הוסיפו את הראשון ☝️</div>
