@@ -18,6 +18,7 @@ import {
   useSortable,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import Teleprompter from "@/components/Teleprompter";
 
 type Song = {
   id: string;
@@ -42,6 +43,7 @@ export default function SongApp() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
+  const [performSong, setPerformSong] = useState<Song | null>(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
@@ -179,11 +181,19 @@ export default function SongApp() {
                   }
                   onDelete={() => removeSong(song.id)}
                   onSave={saveSong}
+                  onPerform={() => setPerformSong(song)}
                 />
               ))}
             </div>
           </SortableContext>
         </DndContext>
+      )}
+
+      {performSong && (
+        <Teleprompter
+          song={performSong}
+          onClose={() => setPerformSong(null)}
+        />
       )}
     </>
   );
@@ -196,6 +206,7 @@ function SortableCard({
   onToggle,
   onDelete,
   onSave,
+  onPerform,
 }: {
   song: Song;
   index: number;
@@ -203,6 +214,7 @@ function SortableCard({
   onToggle: () => void;
   onDelete: () => void;
   onSave: (id: string, fields: EditFields) => Promise<string | null>;
+  onPerform: () => void;
 }) {
   const {
     attributes,
@@ -295,6 +307,15 @@ function SortableCard({
           </button>
           {menuOpen && (
             <div className="menu" onClick={(e) => e.stopPropagation()}>
+              <button
+                className="perform"
+                onClick={() => {
+                  setMenuOpen(false);
+                  onPerform();
+                }}
+              >
+                🎤 מצב הופעה
+              </button>
               <button
                 onClick={() => {
                   onToggle();
