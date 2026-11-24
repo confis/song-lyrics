@@ -1,13 +1,11 @@
 import { createClient, type Client } from "@libsql/client";
 
 // libSQL client — storage resolution:
-//  1. DATABASE_URL (recommended in production): a persistent libSQL/Turso URL
-//     (libsql://...) together with DATABASE_AUTH_TOKEN. Real, shared persistence.
+//  1. DATABASE_URL / TURSO_DATABASE_URL (recommended in production): a persistent
+//     libSQL/Turso URL with its auth token. Real, shared persistence.
 //  2. Otherwise a local SQLite file. On Vercel the project dir is read-only, so
-//     we use /tmp there (NOTE: /tmp is ephemeral and resets — fine for trying it
-//     out, but set DATABASE_URL for durable storage). Locally we use data/songs.db.
+//     we use /tmp there (ephemeral). Locally we use data/songs.db.
 function resolveUrl(): string {
-  // Accept either our own names or the ones the Turso Vercel integration injects.
   const remote = process.env.DATABASE_URL || process.env.TURSO_DATABASE_URL;
   if (remote) return remote;
   if (process.env.VERCEL) return "file:/tmp/songs.db";
@@ -42,6 +40,50 @@ async function init(): Promise<void> {
       created_at INTEGER NOT NULL
     )
   `);
+
+  // Performances (shows): each is its own named setlist of songs.
+  await client.execute(`
+    CREATE TABLE IF NOT EXISTS performances (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      position INTEGER NOT NULL,
+      created_at INTEGER NOT NULL
+    )
+  `);
+
+  // Add songs.performance_id if this DB predates performances.
+  const cols = await client.execute("PRAGMA table_info(songs)");
+  const hasPerf = (cols.rows as unknown as Array<{ name: string }>).some(
+    (r) => r.name === "performance_id"
+  );
+  if (!hasPerf) {
+    await client.execute("ALTER TABLE songs ADD COLUMN performance_id TEXT");
+  }
+
+  // Migrate any songs not yet attached to a performance into a default one,
+  // so existing data is preserved when upgrading.
+  const orphan = await client.execute(
+    "SELECT COUNT(*) AS c FROM songs WHERE performance_id IS NULL"
+  );
+  if (Number((orphan.rows[0] as unknown as { c: number }).c) > 0) {
+    const existing = await client.execute(
+      "SELECT id FROM performances ORDER BY position ASC, created_at ASC LIMIT 1"
+    );
+    let defId: string;
+    if (existing.rows.length) {
+      defId = (existing.rows[0] as unknown as { id: string }).id;
+    } else {
+      defId = crypto.randomUUID();
+      await client.execute({
+        sql: "INSERT INTO performances (id, name, position, created_at) VALUES (?, ?, ?, ?)",
+        args: [defId, "ההופעה שלי", 0, Date.now()],
+      });
+    }
+    await client.execute({
+      sql: "UPDATE songs SET performance_id = ? WHERE performance_id IS NULL",
+      args: [defId],
+    });
+  }
 }
 
 export function ready(): Promise<void> {

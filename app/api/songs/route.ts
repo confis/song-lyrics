@@ -14,24 +14,37 @@ type SongRow = {
   chorus: string | null;
   position: number;
   created_at: number;
+  performance_id: string | null;
 };
 
-export async function GET() {
+// GET /api/songs?performance=<id> — songs in one performance, in order.
+export async function GET(req: Request) {
   await ready();
-  const result = await db.execute(
-    "SELECT * FROM songs ORDER BY position ASC, created_at ASC"
-  );
+  const performanceId = new URL(req.url).searchParams.get("performance");
+  if (!performanceId) {
+    return NextResponse.json({ error: "חסר מזהה הופעה" }, { status: 400 });
+  }
+  const result = await db.execute({
+    sql: "SELECT * FROM songs WHERE performance_id = ? ORDER BY position ASC, created_at ASC",
+    args: [performanceId],
+  });
   return NextResponse.json({ songs: result.rows as unknown as SongRow[] });
 }
 
+// POST { url, performanceId } — fetch + extract a song into a performance.
 export async function POST(req: Request) {
   await ready();
 
-  let body: { url?: string };
+  let body: { url?: string; performanceId?: string };
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: "בקשה לא תקינה" }, { status: 400 });
+  }
+
+  const performanceId = (body.performanceId || "").trim();
+  if (!performanceId) {
+    return NextResponse.json({ error: "חסר מזהה הופעה" }, { status: 400 });
   }
 
   const url = (body.url || "").trim();
@@ -54,14 +67,15 @@ export async function POST(req: Request) {
   const id = crypto.randomUUID();
   const now = Date.now();
 
-  const maxRes = await db.execute(
-    "SELECT COALESCE(MAX(position), -1) AS maxPos FROM songs"
-  );
-  const nextPos = Number((maxRes.rows[0] as any).maxPos) + 1;
+  const maxRes = await db.execute({
+    sql: "SELECT COALESCE(MAX(position), -1) AS maxPos FROM songs WHERE performance_id = ?",
+    args: [performanceId],
+  });
+  const nextPos = Number((maxRes.rows[0] as unknown as { maxPos: number }).maxPos) + 1;
 
   await db.execute({
-    sql: `INSERT INTO songs (id, title, artist, source_url, lyrics, chorus, position, created_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    sql: `INSERT INTO songs (id, title, artist, source_url, lyrics, chorus, position, created_at, performance_id)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     args: [
       id,
       song.title,
@@ -71,6 +85,7 @@ export async function POST(req: Request) {
       song.chorus,
       nextPos,
       now,
+      performanceId,
     ],
   });
 
