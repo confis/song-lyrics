@@ -139,6 +139,77 @@ button:disabled {
   font-size: 14px;
 }
 
+/* Song search autocomplete */
+.search-wrap {
+  position: relative;
+}
+
+.suggest {
+  margin-top: 8px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: var(--shadow);
+}
+
+.suggest-loading {
+  padding: 14px 16px;
+  color: var(--muted);
+  font-size: 15px;
+}
+
+.suggest-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  padding: 12px 14px;
+  text-align: start;
+  font-weight: 600;
+}
+
+.suggest-item:last-child {
+  border-bottom: none;
+}
+
+.suggest-item:hover,
+.suggest-item:active {
+  background: var(--panel-2);
+}
+
+.suggest-thumb {
+  width: 46px;
+  height: 46px;
+  border-radius: 8px;
+  object-fit: cover;
+  flex: 0 0 auto;
+}
+
+.suggest-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.suggest-title {
+  color: #fff;
+  font-weight: 700;
+  font-size: 16px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.suggest-artist {
+  color: var(--muted);
+  font-size: 13px;
+}
+
 .list {
   margin-top: 26px;
   display: flex;

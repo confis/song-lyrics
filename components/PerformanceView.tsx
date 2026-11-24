@@ -37,6 +37,13 @@ type EditFields = {
   lyrics: string;
 };
 
+type SearchResult = {
+  title: string;
+  artist: string;
+  url: string;
+  thumbnail: string;
+};
+
 export default function PerformanceView({
   performance,
   onBack,
@@ -50,6 +57,9 @@ export default function PerformanceView({
   const [error, setError] = useState<string | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
   const [performSong, setPerformSong] = useState<Song | null>(null);
+  const [results, setResults] = useState<SearchResult[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [searchNote, setSearchNote] = useState<string | null>(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
@@ -73,17 +83,49 @@ export default function PerformanceView({
     }
   }
 
-  async function addSong(e: React.FormEvent) {
-    e.preventDefault();
+  const isUrl = (s: string) => /^https?:\/\//i.test(s.trim());
+
+  // Debounced autocomplete: when the input is a name (not a URL), search Genius.
+  useEffect(() => {
+    const q = url.trim();
+    if (!q || isUrl(q)) {
+      setResults([]);
+      setSearchNote(null);
+      setSearching(false);
+      return;
+    }
+    setSearching(true);
+    const t = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/search?q=${encodeURIComponent(q)}`);
+        const data = await res.json();
+        if (data.error === "missing_genius_token") {
+          setSearchNote(
+            "כדי לחפש לפי שם צריך מפתח Genius. בינתיים אפשר להדביק לינק."
+          );
+          setResults([]);
+        } else {
+          setSearchNote(null);
+          setResults(data.results || []);
+        }
+      } catch {
+        setResults([]);
+      } finally {
+        setSearching(false);
+      }
+    }, 300);
+    return () => clearTimeout(t);
+  }, [url]);
+
+  async function addByUrl(link: string) {
     setError(null);
-    const value = url.trim();
-    if (!value) return;
+    setResults([]);
     setLoading(true);
     try {
       const res = await fetch("/api/songs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: value, performanceId: performance.id }),
+        body: JSON.stringify({ url: link, performanceId: performance.id }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -98,6 +140,14 @@ export default function PerformanceView({
     } finally {
       setLoading(false);
     }
+  }
+
+  function addSong(e: React.FormEvent) {
+    e.preventDefault();
+    const value = url.trim();
+    if (!value) return;
+    if (isUrl(value)) addByUrl(value);
+    else if (results.length) addByUrl(results[0].url);
   }
 
   async function removeSong(id: string) {
@@ -147,29 +197,59 @@ export default function PerformanceView({
         <h1 className="perf-name">{performance.name}</h1>
       </div>
 
-      <form className="add-box" onSubmit={addSong}>
-        <input
-          type="url"
-          inputMode="url"
-          dir="ltr"
-          placeholder="https://... לינק לעמוד מילות השיר"
-          value={url}
-          onChange={(e) => setUrl(e.target.value)}
-          disabled={loading}
-        />
-        <button className="btn-add" type="submit" disabled={loading}>
-          {loading ? (
-            <>
-              מחלץ מילים<span className="spinner" />
-            </>
-          ) : (
-            "הוסף שיר"
-          )}
-        </button>
-      </form>
+      <div className="search-wrap">
+        <form className="add-box" onSubmit={addSong}>
+          <input
+            type="text"
+            dir="auto"
+            placeholder="חפשו שיר לפי שם, או הדביקו לינק…"
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+            disabled={loading}
+          />
+          <button className="btn-add" type="submit" disabled={loading}>
+            {loading ? (
+              <>
+                מחלץ מילים<span className="spinner" />
+              </>
+            ) : (
+              "הוסף"
+            )}
+          </button>
+        </form>
+
+        {!loading && (searching || results.length > 0) && (
+          <div className="suggest">
+            {searching && results.length === 0 && (
+              <div className="suggest-loading">מחפש…</div>
+            )}
+            {results.map((r, i) => (
+              <button
+                key={i}
+                type="button"
+                className="suggest-item"
+                onClick={() => addByUrl(r.url)}
+              >
+                {r.thumbnail && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={r.thumbnail} alt="" className="suggest-thumb" />
+                )}
+                <span className="suggest-text">
+                  <span className="suggest-title">{r.title}</span>
+                  {r.artist && (
+                    <span className="suggest-artist">{r.artist}</span>
+                  )}
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
       {error && <div className="error">{error}</div>}
       <div className="hint">
-        טיפ: הדביקו לינק ישיר לעמוד של מילות השיר (למשל Shironet או Genius).
+        {searchNote ||
+          "הקלידו שם שיר וקבלו הצעות, או הדביקו לינק ישיר (Shironet/Genius)."}
       </div>
 
       {songs.length === 0 ? (
