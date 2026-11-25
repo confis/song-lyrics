@@ -1,7 +1,7 @@
 /* Simple offline-first service worker for "סדר הופעה".
    After one online visit, the app shell, its assets and the songs list are
    cached, so the site opens and shows the songs without a connection. */
-const VERSION = "v1";
+const VERSION = "v3";
 const STATIC_CACHE = `static-${VERSION}`;
 const RUNTIME_CACHE = `runtime-${VERSION}`;
 const API_CACHE = `api-${VERSION}`;
