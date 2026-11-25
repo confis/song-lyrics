@@ -128,21 +128,27 @@ export default function Teleprompter({
       </div>
 
       <div className="tp-controls" onClick={(e) => e.stopPropagation()}>
-        <button className="tp-btn" onClick={onClose} title="סגור">
-          ✕
-        </button>
-        <button className="tp-btn" onClick={restart} title="התחל מחדש">
-          ⟲
-        </button>
-        <button
-          className="tp-btn tp-play"
-          onClick={() => setPlaying((p) => !p)}
-          title={playing ? "עצור" : "נגן"}
-        >
-          {playing ? "⏸" : "▶"}
-        </button>
-
-        <div className="tp-group">
+        <div className="tp-speedrow">
+          <span className="tp-speedlabel">🐢 מהירות גלילה 🐇</span>
+          <input
+            className="tp-slider"
+            type="range"
+            min={8}
+            max={300}
+            step={2}
+            value={speed}
+            onChange={(e) => setSpeed(Number(e.target.value))}
+            aria-label="מהירות גלילה"
+          />
+          <span className="tp-val">{speed}</span>
+        </div>
+        <div className="tp-buttons">
+          <button className="tp-btn" onClick={onClose} title="סגור">
+            ✕
+          </button>
+          <button className="tp-btn" onClick={restart} title="התחל מחדש">
+            ⟲
+          </button>
           <button
             className="tp-btn"
             onClick={() => setSpeed((s) => Math.max(8, s - 6))}
@@ -150,7 +156,13 @@ export default function Teleprompter({
           >
             🐢
           </button>
-          <span className="tp-val">קצב {speed}</span>
+          <button
+            className="tp-btn tp-play"
+            onClick={() => setPlaying((p) => !p)}
+            title={playing ? "עצור" : "נגן"}
+          >
+            {playing ? "⏸ עצור" : "▶ נגן"}
+          </button>
           <button
             className="tp-btn"
             onClick={() => setSpeed((s) => Math.min(300, s + 6))}
@@ -158,9 +170,6 @@ export default function Teleprompter({
           >
             🐇
           </button>
-        </div>
-
-        <div className="tp-group">
           <button
             className="tp-btn"
             onClick={() => setFontSize((f) => Math.max(18, f - 2))}
@@ -177,17 +186,6 @@ export default function Teleprompter({
           </button>
         </div>
       </div>
-
-      <input
-        className="tp-slider"
-        type="range"
-        min={8}
-        max={300}
-        step={2}
-        value={speed}
-        onChange={(e) => setSpeed(Number(e.target.value))}
-        aria-label="קצב גלילה"
-      />
     </div>
   );
 }

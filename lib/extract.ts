@@ -105,16 +105,44 @@ const BROWSER_HEADERS: Record<string, string> = {
   "Accept-Language": "he-IL,he;q=0.9,en;q=0.8",
 };
 
+const LYRICS_MARK = "\n===LYRICS===\n";
+
 function htmlToText(html: string): string {
   const $ = cheerio.load(html);
-  $("script, style, noscript, svg, iframe, header, footer, nav").remove();
   const pageTitle = $("title").first().text().trim();
+
+  // Genius (and some others) keep lyrics in a dedicated container. Grab it
+  // directly so the real lyrics aren't buried in page chrome or truncated.
+  const containers = $(
+    '[data-lyrics-container="true"], [class*="Lyrics__Container"], .lyrics'
+  );
+  if (containers.length) {
+    containers.find("br").replaceWith("\n");
+    let lyr = "";
+    containers.each((_, el) => {
+      lyr += $(el).text() + "\n";
+    });
+    lyr = lyr.replace(/\n{3,}/g, "\n\n").trim();
+    if (lyr.length > 20) {
+      return `PAGE TITLE: ${pageTitle}${LYRICS_MARK}${lyr}`.slice(0, 24000);
+    }
+  }
+
+  $("script, style, noscript, svg, iframe, header, footer, nav").remove();
   const bodyText = $("body")
     .text()
     .replace(/[ \t ]+/g, " ")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
-  return `PAGE TITLE: ${pageTitle}\n\n${bodyText}`.slice(0, 16000);
+  return `PAGE TITLE: ${pageTitle}\n\n${bodyText}`.slice(0, 24000);
+}
+
+// If the fetched text already carried a clean lyrics section (Genius
+// container), pull it out as a reliable fallback.
+function rawLyricsFromText(pageText: string): string {
+  const i = pageText.indexOf(LYRICS_MARK);
+  if (i === -1) return "";
+  return pageText.slice(i + LYRICS_MARK.length).trim();
 }
 
 async function fetchPageText(url: string): Promise<string> {
@@ -132,20 +160,20 @@ async function fetchPageText(url: string): Promise<string> {
     /* fall through to the reader */
   }
 
-  // 2) Fallback: Jina AI Reader fetches and cleans pages that block bots
-  //    (e.g. Genius returns 403 to server/data-center requests).
+  // 2) Fallback: Jina AI Reader fetches pages that block bots (Genius returns
+  //    403 to server/data-center requests). Ask it for HTML so the same
+  //    lyrics-container parser applies.
   try {
     const res = await fetch(`https://r.jina.ai/${url}`, {
       headers: {
-        Accept: "text/plain",
-        "X-Return-Format": "text",
+        "X-Return-Format": "html",
         "Accept-Language": "he-IL,he;q=0.9,en;q=0.8",
       },
       redirect: "follow",
     });
     if (res.ok) {
-      const text = (await res.text()).trim();
-      if (text) return `PAGE TEXT:\n\n${text}`.slice(0, 16000);
+      const html = (await res.text()).trim();
+      if (html) return htmlToText(html);
     }
   } catch {
     /* ignore */
@@ -271,7 +299,12 @@ export async function extractSongFromUrl(url: string): Promise<ExtractedSong> {
     return fallbackExtract(url, pageText);
   }
 
-  const lyrics = (parsed.lyrics || "").trim();
+  let lyrics = (parsed.lyrics || "").trim();
+  if (!lyrics) {
+    // The model returned nothing usable — fall back to the clean lyrics the
+    // page parser already extracted (Genius container), if any.
+    lyrics = rawLyricsFromText(pageText);
+  }
   if (!lyrics) {
     throw new Error(
       "לא נמצאו מילות שיר בעמוד הזה. נסה לינק ישיר לעמוד של מילות השיר."
